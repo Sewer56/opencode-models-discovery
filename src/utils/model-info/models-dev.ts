@@ -1,8 +1,33 @@
 import type { ModelInfoEnricher } from './types'
-import { lookupModelsDevData, type ModelsDevModel } from '../models-dev-fetcher'
+import { lookupModelsDevData, type ModelsDevModel, type ReasoningOption } from '../models-dev-fetcher'
 
 function hasUsableNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+/**
+ * Build reasoning variant overrides from models.dev `reasoning_options`.
+ *
+ * Only `effort`-type options are emitted, and always as `{ reasoningEffort: <tier> }`
+ * since this plugin discovers OpenAI-compatible providers whose native wire shape is
+ * `reasoning_effort`. Toggle/budget_tokens options are ignored (they map to non-OAI
+ * shapes elsewhere in opencode and would need provider-specific translation).
+ *
+ * Mirrors opencode core's `reasoningVariants` + `reasoningEffort` for the
+ * `@ai-sdk/openai-compatible` branch.
+ */
+function createReasoningVariantsFromOptions(options: ReasoningOption[] | undefined): Record<string, any> | undefined {
+  if (!options || options.length === 0) return undefined
+  const effort = options.find((option) => option.type === 'effort')
+  if (!effort?.values?.length) return undefined
+
+  const variants: Record<string, any> = {}
+  for (const value of effort.values) {
+    const id = value === null ? 'none' : value
+    if (typeof id !== 'string' || id.length === 0) continue
+    variants[id] = { reasoningEffort: id }
+  }
+  return Object.keys(variants).length > 0 ? variants : undefined
 }
 
 function applyModelsDevModelInfo(modelConfig: any, info: ModelsDevModel | undefined): void {
@@ -28,6 +53,11 @@ function applyModelsDevModelInfo(modelConfig: any, info: ModelsDevModel | undefi
       ...(info.modalities.input?.length ? { input: info.modalities.input } : {}),
       ...(info.modalities.output?.length ? { output: info.modalities.output } : {}),
     }
+  }
+
+  const variants = createReasoningVariantsFromOptions(info.reasoning_options)
+  if (variants) {
+    modelConfig.variants = variants
   }
 }
 

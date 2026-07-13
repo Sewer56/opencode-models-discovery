@@ -1,3 +1,10 @@
+export interface ReasoningOption {
+  type: 'effort' | 'toggle' | 'budget_tokens'
+  values?: (string | null)[]
+  min?: number
+  max?: number
+}
+
 export interface ModelsDevModel {
   id: string
   name?: string
@@ -15,9 +22,10 @@ export interface ModelsDevModel {
     input?: number
     output?: number
   }
+  reasoning_options?: ReasoningOption[]
 }
 
-const MODELS_DEV_URL = 'https://models.dev/models.json'
+const MODELS_DEV_URL = 'https://models.dev/api.json'
 const PREFIX_MATCH_MIN_SCORE = 70
 const PREFIX_MATCH_MIN_SHARED_PARTS = 2
 
@@ -31,11 +39,27 @@ function toModelId(providerId: string | undefined, modelId: string): string {
   return providerId ? `${providerId}/${modelId}` : modelId
 }
 
-function addModel(cache: Map<string, ModelsDevModel>, providerId: string | undefined, rawModel: Record<string, any>, fallbackModelId?: string): void {
+function modelSegment(rawId: string): string {
+  const parts = rawId.split('/')
+  return parts[parts.length - 1].toLowerCase()
+}
+
+function addModel(cache: Map<string, ModelsDevModel>, seenModelSegments: Set<string>, providerId: string | undefined, rawModel: Record<string, any>, fallbackModelId?: string): void {
   const rawId = typeof rawModel.id === 'string' && rawModel.id.length > 0 ? rawModel.id : fallbackModelId
   if (!rawId) {
     return
   }
+
+  // /api.json lists the same model under every provider that proxies it (e.g.
+  // openai/gpt-5.6, azure/gpt-5.6, openrouter/gpt-5.6 …).  Keeping all of them
+  // makes the model-segment lookup ambiguous (it sees >1 exact match and
+  // returns undefined), which silently drops enrichment for every model.
+  // Deduplicate by lowercase model segment so each canonical model appears once.
+  const segment = modelSegment(rawId)
+  if (seenModelSegments.has(segment)) {
+    return
+  }
+  seenModelSegments.add(segment)
 
   const id = rawId.includes('/') ? rawId : toModelId(providerId, rawId)
   cache.set(id, {
@@ -55,11 +79,34 @@ function addModel(cache: Map<string, ModelsDevModel>, providerId: string | undef
       input: typeof rawModel.limit.input === 'number' ? rawModel.limit.input : undefined,
       output: typeof rawModel.limit.output === 'number' ? rawModel.limit.output : undefined,
     } : undefined,
+    reasoning_options: parseReasoningOptions(rawModel.reasoning_options),
   })
+}
+
+function parseReasoningOptions(value: unknown): ReasoningOption[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const result: ReasoningOption[] = []
+  for (const item of value) {
+    if (!isObject(item)) continue
+    const type = item.type
+    if (type !== 'effort' && type !== 'toggle' && type !== 'budget_tokens') continue
+    const option: ReasoningOption = { type }
+    if (type === 'effort' && Array.isArray(item.values)) {
+      option.values = item.values
+        .filter((v: unknown): v is string | null => v === null || typeof v === 'string')
+    }
+    if (type === 'budget_tokens') {
+      if (typeof item.min === 'number' && Number.isFinite(item.min)) option.min = item.min
+      if (typeof item.max === 'number' && Number.isFinite(item.max)) option.max = item.max
+    }
+    result.push(option)
+  }
+  return result.length > 0 ? result : undefined
 }
 
 function parseModelsDevData(data: unknown): Map<string, ModelsDevModel> {
   const cache = new Map<string, ModelsDevModel>()
+  const seenModelSegments = new Set<string>()
 
   if (!isObject(data)) {
     return cache
@@ -73,13 +120,13 @@ function parseModelsDevData(data: unknown): Map<string, ModelsDevModel> {
     if (isObject(value.models)) {
       for (const [modelId, model] of Object.entries(value.models)) {
         if (isObject(model)) {
-          addModel(cache, key, model, modelId)
+          addModel(cache, seenModelSegments, key, model, modelId)
         }
       }
       continue
     }
 
-    addModel(cache, undefined, value, key)
+    addModel(cache, seenModelSegments, undefined, value, key)
   }
 
   return cache
@@ -91,7 +138,7 @@ export async function fetchModelsDevData(): Promise<Map<string, ModelsDevModel>>
   try {
     const response = await fetch(MODELS_DEV_URL, {
       method: 'GET',
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(30000),
     })
 
     if (!response.ok) {

@@ -955,6 +955,7 @@ describe('ModelDiscovery Plugin', () => {
           json: async () => ({
             data: [
               { id: 'openai/gpt-4o', object: 'model', created: 1234567890, owned_by: 'openai' },
+              { id: 'openai/gpt-5.6', object: 'model', created: 1234567890, owned_by: 'openai' },
               { id: 'unknown/local-model', object: 'model', created: 1234567890, owned_by: 'local' }
             ]
           })
@@ -979,6 +980,13 @@ describe('ModelDiscovery Plugin', () => {
                     context: 128000,
                     output: 16384
                   }
+                },
+                'gpt-5.6': {
+                  id: 'gpt-5.6',
+                  reasoning: true,
+                  tool_call: true,
+                  limit: { context: 400000, output: 128000 },
+                  reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }]
                 }
               }
             }
@@ -1007,7 +1015,7 @@ describe('ModelDiscovery Plugin', () => {
       expect(mockFetch).toHaveBeenNthCalledWith(1, 'https://api.openai.com/v1/models', expect.objectContaining({
         method: 'GET'
       }))
-      expect(mockFetch).toHaveBeenNthCalledWith(2, 'https://models.dev/models.json', expect.objectContaining({
+      expect(mockFetch).toHaveBeenNthCalledWith(2, 'https://models.dev/api.json', expect.objectContaining({
         method: 'GET'
       }))
       expect(config.provider.openai.models['openai/gpt-4o']).toEqual(expect.objectContaining({
@@ -1024,6 +1032,22 @@ describe('ModelDiscovery Plugin', () => {
         limit: {
           context: 128000,
           output: 16384
+        }
+      }))
+      expect(config.provider.openai.models['openai/gpt-5.6']).toEqual(expect.objectContaining({
+        id: 'openai/gpt-5.6',
+        reasoning: true,
+        limit: {
+          context: 400000,
+          output: 128000
+        },
+        variants: {
+          none: { reasoningEffort: 'none' },
+          low: { reasoningEffort: 'low' },
+          medium: { reasoningEffort: 'medium' },
+          high: { reasoningEffort: 'high' },
+          xhigh: { reasoningEffort: 'xhigh' },
+          max: { reasoningEffort: 'max' }
         }
       }))
       expect(config.provider.openai.models['unknown/local-model']).not.toHaveProperty('limit')

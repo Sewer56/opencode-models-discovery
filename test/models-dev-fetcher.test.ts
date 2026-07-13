@@ -26,6 +26,45 @@ describe('models.dev fetcher', () => {
     }))
   })
 
+  it('should parse reasoning_options with effort tiers from models.dev data', () => {
+    const cache = modelsDevTestUtils.parseModelsDevData({
+      openai: {
+        models: {
+          'gpt-5.6': {
+            id: 'gpt-5.6',
+            reasoning: true,
+            reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }]
+          }
+        }
+      }
+    })
+
+    expect(cache.get('openai/gpt-5.6')?.reasoning_options).toEqual([
+      { type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }
+    ])
+  })
+
+  it('should ignore malformed reasoning_options entries', () => {
+    const cache = modelsDevTestUtils.parseModelsDevData({
+      openai: {
+        models: {
+          'gpt-bogus': {
+            id: 'gpt-bogus',
+            reasoning_options: [
+              { type: 'effort', values: ['low', null, 123, 'high'] },
+              { type: 'unknown_type' },
+              'not-an-object'
+            ]
+          }
+        }
+      }
+    })
+
+    expect(cache.get('openai/gpt-bogus')?.reasoning_options).toEqual([
+      { type: 'effort', values: ['low', null, 'high'] }
+    ])
+  })
+
   it('should parse flat models.dev data keyed by model id', () => {
     const cache = modelsDevTestUtils.parseModelsDevData({
       'openai/gpt-4o': {
@@ -88,7 +127,7 @@ describe('models.dev fetcher', () => {
     expect(lookupModelsDevData('custom/shared-model', cache)?.id).toBe('openai/shared-model')
   })
 
-  it('should not match ambiguous duplicate model id segments', () => {
+  it('should resolve duplicate model id segments to the first provider seen', () => {
     const cache = modelsDevTestUtils.parseModelsDevData({
       providerA: {
         models: {
@@ -102,7 +141,10 @@ describe('models.dev fetcher', () => {
       }
     })
 
-    expect(lookupModelsDevData('custom/shared-model', cache)).toBeUndefined()
+    // /api.json lists the same model under every proxying provider. Dedup keeps
+    // the first-seen (canonical owner) entry so the model-segment lookup is
+    // unambiguous instead of returning undefined for a real model.
+    expect(lookupModelsDevData('custom/shared-model', cache)?.id).toBe('providerA/shared-model')
   })
 
   it('should allow model-only matches when provider is absent', () => {
