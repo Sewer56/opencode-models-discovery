@@ -69,6 +69,15 @@ function getExplicitModels(config: object, providerID: string, models: Record<st
   return Object.fromEntries(Object.entries(models).filter(([modelID, model]) => injectedModels.get(modelID) !== model))
 }
 
+function withQueryParameter(endpoint: string, key: string, value: string): string {
+  const separator = endpoint.indexOf('?')
+  const path = separator === -1 ? endpoint : endpoint.slice(0, separator)
+  const query = separator === -1 ? '' : endpoint.slice(separator + 1)
+  const params = new URLSearchParams(query)
+  params.set(key, value)
+  return `${path}?${params.toString()}`
+}
+
 async function getResolvedProvidersByID(
   client: PluginInput['client'],
   logger: PluginLogger,
@@ -215,9 +224,13 @@ export async function enhanceConfig(
     for (const [providerName, providerConfig] of Object.entries(providers)) {
       const p = providerConfig as any
       const providerDiscoveryConfig = p.options?.modelsDiscovery ?? {}
-      const modelsEndpoint = providerDiscoveryConfig.endpoint ?? '/v1/models'
+      const modelInfoEndpoint = providerDiscoveryConfig.modelInfoEndpoint
       const timeoutMs = providerDiscoveryConfig.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
       const modelInfoFormat = providerDiscoveryConfig.modelInfoFormat
+      const configuredModelsEndpoint = providerDiscoveryConfig.endpoint ?? '/v1/models'
+      const modelsEndpoint = modelInfoFormat === ModelInfoFormat.AxonHub
+        ? withQueryParameter(configuredModelsEndpoint, 'include', 'all')
+        : configuredModelsEndpoint
       const filterNonChat = providerDiscoveryConfig.filterNonChat !== false
       const forceDiscoveryEnabled = providerDiscoveryConfig.enabled === true
 
@@ -306,6 +319,10 @@ export async function enhanceConfig(
         })
       } else if (!usingPersistedModels && (modelInfoFormat === ModelInfoFormat.Bifrost || modelInfoFormat === ModelInfoFormat.LlamaSwap || modelInfoFormat === ModelInfoFormat.OmniRoute || modelInfoFormat === ModelInfoFormat.VLLM)) {
         modelInfoEnricher = createModelInfoEnricher(modelInfoFormat, null)
+      } else if (!usingPersistedModels && modelInfoFormat === ModelInfoFormat.AxonHub) {
+        // AxonHub includes limits and capabilities in its /v1/models entries.
+        // Reuse that response instead of making a second metadata request.
+        modelInfoEnricher = createModelInfoEnricher(modelInfoFormat, models, { filterNonChat })
       } else if (!usingPersistedModels && modelInfoFormat === ModelInfoFormat.LMStudio) {
         const modelInfoEndpoint = providerDiscoveryConfig.modelInfoEndpoint ?? DEFAULT_LMSTUDIO_MODELS_ENDPOINT
         const modelInfoDiscovery = await discoverModelInfoFromProvider(baseURL, apiKey, modelInfoEndpoint, timeoutMs)

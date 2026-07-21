@@ -80,7 +80,7 @@ Each provider can configure discovery behavior through `provider.<name>.options.
 | `provider.<name>.options.modelsDiscovery.endpoint` | `string` | Provider-specific models endpoint as an origin-relative path beginning with `/`. Defaults to `/v1/models` |
 | `provider.<name>.options.modelsDiscovery.timeoutMs` | positive finite `number` | Per-request timeout for the provider's models and provider-specific metadata endpoints. Defaults to `3000` |
 | `provider.<name>.options.modelsDiscovery.modelInfoEndpoint` | `string` | Override a format-specific metadata endpoint as an origin-relative path or complete URL. Defaults to `/v1/model/info` for `"litellm"` and `/api/v1/models` for `"lmstudio"` |
-| `provider.<name>.options.modelsDiscovery.modelInfoFormat` | `string` | Model info response format. Currently supports `"bifrost"`, `"litellm"`, `"models.dev"`, `"vllm"`, `"lmstudio"`, `"llama-swap"`, and `"omniroute"` |
+| `provider.<name>.options.modelsDiscovery.modelInfoFormat` | `string` | Model info response format. Currently supports `"axonhub"`, `"bifrost"`, `"litellm"`, `"models.dev"`, `"vllm"`, `"lmstudio"`, `"llama-swap"`, and `"omniroute"` |
 | `provider.<name>.options.modelsDiscovery.filterNonChat` | `boolean` | When model info is available, skip models whose `model_info.mode` is not `chat`. Defaults to `true` |
 | `provider.<name>.options.modelsDiscovery.models.includeRegex` | `string[]` | Shortcut regex allow-list for discovered model ids only |
 | `provider.<name>.options.modelsDiscovery.models.excludeRegex` | `string[]` | Shortcut regex deny-list for discovered model ids only |
@@ -284,10 +284,11 @@ Community provider examples live in [`docs/config_example/`](config_example/).
 
 The generic OpenAI-compatible `/v1/models` endpoint only guarantees a small model list shape. Extra metadata such as context limits, tool calling, reasoning, image input, or structured output is provider-specific, so metadata enrichment is opt-in.
 
-The plugin currently supports seven model info formats:
+The plugin currently supports eight model info formats:
 
 | Format | Source | Requires `modelInfoEndpoint` | Notes |
 |--------|--------|------------------------------|-------|
+| `"axonhub"` | Extended fields in AxonHub `/v1/models?include=all` | No | Reuses the model-list request and reads AxonHub model cards |
 | `"bifrost"` | Fields in Bifrost's `/v1/models` response | No | Reads Bifrost inline limits, modalities, and base pricing when present |
 | `"litellm"` | Provider-specific model info endpoint | No | Uses `/v1/model/info` by default; set `modelInfoEndpoint` to override it |
 | `"models.dev"` | `https://models.dev/models.json` | No | Uses the public models.dev metadata index |
@@ -377,6 +378,44 @@ Use `modelInfoFormat: "bifrost"` for a Bifrost AI Gateway provider. It reads Bif
 For each discovered model, the plugin maps Bifrost's reported `context_length`, `max_input_tokens`, and `max_output_tokens` to `limit.context`, `limit.input`, and `limit.output`. Limits are added only when both the context and output limits are available, as OpenCode requires both. It maps `architecture.input_modalities` and `architecture.output_modalities` to lower-case OpenCode modalities, translating Bifrost's `SPEECH` value to `audio` and ignoring unsupported values. Bifrost's `pricing.prompt` and `pricing.completion` are USD per-token rates; the plugin converts them to OpenCode's USD per-million-token `cost.input` and `cost.output` values. Costs are added only when both rates are available. Other pricing fields, scoped pricing overrides, and tiered pricing are not represented by this format.
 
 When `smartModelName: true` is set for the provider, Bifrost's `normalized_name` is used when it is available. Missing or malformed fields are left unset. The normal unpaginated Bifrost `/v1/models` request returns the complete aggregated list; avoid configuring a `page_size` unless you intentionally want a paged subset.
+
+### AxonHub Model Info
+
+Use `modelInfoFormat: "axonhub"` for an [AxonHub](https://github.com/looplj/axonhub) provider. The plugin adds `include=all` to the configured models endpoint and consumes the extended model-card fields from that same response. It does not call `/v1/model/info` or make another metadata request.
+
+```json
+{
+  "plugin": ["opencode-models-discovery"],
+  "provider": {
+    "axonhub": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "AxonHub",
+      "options": {
+        "baseURL": "http://127.0.0.1:8090/v1",
+        "modelsDiscovery": {
+          "enabled": true,
+          "modelInfoFormat": "axonhub",
+          "smartModelName": true
+        }
+      },
+      "models": {}
+    }
+  }
+}
+```
+
+When an AxonHub model has a configured model card, the plugin may populate:
+
+- `limit.context` from `context_length`
+- `limit.output` from `max_output_tokens`
+- `reasoning`, `tool_call`, and `attachment` from `capabilities`
+- `modalities`
+- `cost` from USD per-million-token `pricing`
+- The display name when `smartModelName` is enabled
+
+`context_length` is treated as the total context window, so it is not copied to `limit.input`. Limits are emitted only when both context and output are valid positive integers and output does not exceed context. The plugin does not derive a model release date from AxonHub's `created` field because that timestamp records the AxonHub database row, not the upstream model release.
+
+Channel-only models without an AxonHub model card still appear in discovery, but AxonHub cannot return extended metadata for them. The plugin leaves their unknown limits and capabilities unset rather than guessing. AxonHub exposes only a reasoning-support boolean, not reasoning-effort tiers; OpenCode may still infer variants from known model ids.
 
 ### LiteLLM Model Info
 
@@ -480,7 +519,7 @@ Use `modelInfoFormat: "models.dev"` to enrich discovered models from the public 
 
 This project is not affiliated with, endorsed by, or sponsored by [models.dev](https://models.dev/).
 
-This does not require `modelInfoEndpoint`, because the source is fixed to `https://models.dev/models.json`:
+This does not require `modelInfoEndpoint`, because the source is fixed to `https://models.dev/api.json`:
 
 ```json
 {

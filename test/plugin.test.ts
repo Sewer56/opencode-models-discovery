@@ -270,6 +270,7 @@ describe('ModelDiscovery Plugin', () => {
         expect(config.command['models-discovery:config'].template).toContain('modelInfoFormat="models.dev"')
         expect(config.command['models-discovery:config'].template).toContain('modelInfoFormat="bifrost"')
         expect(config.command['models-discovery:config'].template).toContain('modelInfoFormat="litellm"')
+        expect(config.command['models-discovery:config'].template).toContain('modelInfoFormat="axonhub"')
         expect(config.command['models-discovery:config'].template).toContain('modelInfoFormat="vllm"')
         expect(config.command['models-discovery:config'].template).toContain('modelInfoFormat="lmstudio"')
         expect(config.command['models-discovery:config'].template).toContain('modelInfoFormat="llama-swap"')
@@ -1297,6 +1298,116 @@ describe('ModelDiscovery Plugin', () => {
       }))
       expect(config.provider.litellm.models['text-embedding-3-small']).toBeUndefined()
       expect(config.provider.litellm.models['dall-e-3']).toBeUndefined()
+    })
+
+    it('should enrich AxonHub models from the existing models response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [{
+            id: 'glm-5.2',
+            object: 'model',
+            created: 1781359129,
+            owned_by: 'zai',
+            name: 'GLM-5.2',
+            type: 'chat',
+            context_length: 10_000_000,
+            max_output_tokens: 131_072,
+            modalities: {
+              input: ['text'],
+              output: ['text'],
+            },
+            capabilities: {
+              vision: false,
+              tool_call: true,
+              reasoning: true,
+            },
+            pricing: {
+              input: 1.4,
+              output: 4.4,
+              cache_read: 0.26,
+              cache_write: 0,
+              unit: 'per_1m_tokens',
+              currency: 'USD',
+            },
+          }],
+        }),
+      })
+
+      const config: any = {
+        provider: {
+          axonhub: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'AxonHub',
+            options: {
+              baseURL: 'http://127.0.0.1:8090/v1',
+              modelsDiscovery: {
+                modelInfoFormat: 'axonhub',
+                smartModelName: true,
+              },
+            },
+            models: {},
+          },
+        },
+      }
+
+      await pluginHooks.config(config)
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(mockFetch).toHaveBeenCalledWith('http://127.0.0.1:8090/v1/models?include=all', expect.objectContaining({
+        method: 'GET',
+      }))
+      expect(config.provider.axonhub.models['glm-5.2']).toEqual({
+        id: 'glm-5.2',
+        name: 'GLM-5.2',
+        modalities: {
+          input: ['text'],
+          output: ['text'],
+        },
+        limit: {
+          context: 10_000_000,
+          output: 131_072,
+        },
+        reasoning: true,
+        tool_call: true,
+        attachment: false,
+        cost: {
+          input: 1.4,
+          output: 4.4,
+          cache_read: 0.26,
+          cache_write: 0,
+        },
+      })
+    })
+
+    it('should preserve model endpoint query parameters when requesting AxonHub metadata', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: [] }),
+      })
+
+      const config: any = {
+        provider: {
+          axonhub: {
+            npm: '@ai-sdk/openai-compatible',
+            options: {
+              baseURL: 'http://127.0.0.1:8090/v1',
+              modelsDiscovery: {
+                endpoint: '/v1/models?tenant=work&include=name',
+                modelInfoFormat: 'axonhub',
+              },
+            },
+          },
+        },
+      }
+
+      await pluginHooks.config(config)
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://127.0.0.1:8090/v1/models?tenant=work&include=all',
+        expect.objectContaining({ method: 'GET' })
+      )
     })
 
     it('should enrich models from models.dev when explicitly configured as model info format', async () => {

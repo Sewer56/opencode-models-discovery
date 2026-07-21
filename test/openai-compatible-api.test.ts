@@ -75,6 +75,45 @@ describe('OpenAI-compatible API discovery', () => {
     })
   })
 
+  it.each([
+    { data: {} },
+    { data: null },
+    {},
+    [],
+  ])('returns ok false for malformed model-list payload %j', async (payload) => {
+    await withServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }, async (baseURL) => {
+      const result = await discoverModelsFromProvider(baseURL)
+
+      expect(result).toEqual({ ok: false, models: [] })
+    })
+  })
+
+  it('filters malformed model entries without rejecting valid entries', async () => {
+    await withServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        data: [
+          null,
+          [],
+          { id: '' },
+          { id: '   ' },
+          { id: 123 },
+          { id: 'valid-model', custom: true },
+        ],
+      }))
+    }, async (baseURL) => {
+      const result = await discoverModelsFromProvider(baseURL)
+
+      expect(result).toEqual({
+        ok: true,
+        models: [{ id: 'valid-model', custom: true }],
+      })
+    })
+  })
+
   it('returns ok false when the request times out', async () => {
     await withServer((_req, res) => {
       setTimeout(() => {

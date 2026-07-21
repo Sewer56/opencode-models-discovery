@@ -121,6 +121,7 @@ Supported plugin options under provider.<id>.options.modelsDiscovery:
 - modelInfoFormat="models.dev": enrich from the public models.dev index; modelInfoEndpoint optionally overrides the complete models.json URL
 - modelInfoFormat="bifrost": read Bifrost's documented inline /v1/models limits, modalities, and base pricing without another request
 - modelInfoFormat="litellm": enrich from a LiteLLM-compatible /v1/model/info endpoint; modelInfoEndpoint optionally overrides the path
+- modelInfoFormat="axonhub": read limits, capabilities, modalities, pricing, and names directly from AxonHub /v1/models?include=all entries without another request
 - modelInfoFormat="vllm": for vLLM-compatible providers whose raw /v1/models entries include a positive numeric max_model_len; without another request, sets limit.context and limit.output for matching discovered models
 - modelInfoFormat="lmstudio": discover callable models through the normal /v1/models endpoint, then enrich exact model-id matches from LM Studio's /api/v1/models inventory
 - modelInfoFormat="llama-swap": read llama-swap's inline /v1/models context, modalities, and function-calling metadata without another request
@@ -147,6 +148,7 @@ Recommended defaults:
 - use modelInfoFormat="models.dev" for models.dev metadata enrichment; set modelInfoEndpoint to a complete mirror or proxy URL only when needed
 - use modelInfoFormat="bifrost" only for Bifrost /v1/models responses; it is an explicit inline-metadata format and does not make another request
 - use modelInfoFormat="litellm" for LiteLLM-compatible /v1/model/info; set modelInfoEndpoint only when the provider uses another path
+- use modelInfoFormat="axonhub" for AxonHub providers; it consumes extended fields from the existing models response and does not use modelInfoEndpoint
 - use modelInfoFormat="vllm" only when the provider's /v1/models response exposes max_model_len; it is not a standard OpenAI-compatible field, does not require modelInfoEndpoint, and does not infer other capabilities
 - use modelInfoFormat="lmstudio" for LM Studio REST metadata enrichment; set modelInfoEndpoint only when LM Studio uses another inventory path
 - use modelInfoFormat="llama-swap" only for llama-swap /v1/models responses; it is an explicit inline-metadata format and does not make another request

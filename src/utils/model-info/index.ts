@@ -1,4 +1,5 @@
 import { createBifrostModelInfoEnricher } from './bifrost'
+import { createAxonHubModelInfoEnricher } from './axonhub'
 import { createLiteLLMModelInfoEnricher } from './litellm'
 import { createLMStudioModelInfoEnricher } from './lmstudio'
 import { createLlamaSwapModelInfoEnricher } from './llamaswap'
@@ -12,6 +13,7 @@ type ModelInfoEnricherFactory = (data: unknown, options?: ModelInfoEnricherOptio
 
 const MODEL_INFO_ENRICHERS: Partial<Record<ModelInfoFormat, ModelInfoEnricherFactory>> = {
   [ModelInfoFormat.Bifrost]: createBifrostModelInfoEnricher,
+  [ModelInfoFormat.AxonHub]: createAxonHubModelInfoEnricher,
   [ModelInfoFormat.LiteLLM]: createLiteLLMModelInfoEnricher,
   [ModelInfoFormat.ModelsDev]: createModelsDevModelInfoEnricher,
   [ModelInfoFormat.VLLM]: createVLLMModelInfoEnricher,

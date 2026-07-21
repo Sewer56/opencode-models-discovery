@@ -254,6 +254,17 @@ For Bifrost AI Gateway's inline `/v1/models` metadata, without another metadata 
 }
 ```
 
+For AxonHub extended model cards:
+
+```json
+{
+  "modelsDiscovery": {
+    "enabled": true,
+    "modelInfoFormat": "axonhub"
+  }
+}
+```
+
 For LM Studio 0.4.0+'s native v1 REST inventory endpoint:
 
 ```json
@@ -275,6 +286,8 @@ For llama-swap's inline `/v1/models` metadata, without another metadata request:
   }
 }
 ```
+
+AxonHub enrichment reuses `/v1/models?include=all`; it does not require `modelInfoEndpoint`. It maps authoritative model-card limits and capabilities when present and leaves channel-only models without cards unset.
 
 If metadata cannot be fetched or matched safely, discovery still succeeds and the plugin leaves unknown capability fields unset rather than guessing defaults. See [model metadata enrichment](docs/configuration.md#model-metadata-enrichment) for format-specific behavior and configuration.
 

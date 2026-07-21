@@ -31,6 +31,7 @@ export type CompiledModelFieldFilter = ModelFieldEqualsFilter | (Omit<ModelField
 
 export enum ModelInfoFormat {
   Bifrost = 'bifrost',
+  AxonHub = 'axonhub',
   LiteLLM = 'litellm',
   ModelsDev = 'models.dev',
   VLLM = 'vllm',
