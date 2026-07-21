@@ -7,6 +7,7 @@ describe('JSON config struct parsing', () => {
   }
 
   it.each([
+    { json: '{"modelInfoFormat":"axonhub"}', expected: true },
     { json: '{"modelInfoFormat":"litellm"}', expected: true },
     { json: '{"modelInfoFormat":"models.dev"}', expected: true },
     { json: '{"modelInfoFormat":"vllm"}', expected: true },

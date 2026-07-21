@@ -39,8 +39,8 @@ Each provider can configure discovery behavior through `provider.<name>.options.
 | `provider.<name>.options.modelsDiscovery.enabled` | `boolean` | Force enable or disable discovery for a single provider |
 | `provider.<name>.options.modelsDiscovery.endpoint` | `string` | Provider-specific models endpoint path. Defaults to `/v1/models` |
 | `provider.<name>.options.modelsDiscovery.modelInfoEndpoint` | `string` | Provider-specific model info endpoint path. Metadata enrichment is disabled when omitted |
-| `provider.<name>.options.modelsDiscovery.modelInfoFormat` | `string` | Model info response format. Currently supports `"litellm"`, `"models.dev"`, and `"vllm"` |
-| `provider.<name>.options.modelsDiscovery.filterNonChat` | `boolean` | When model info is available, skip models whose `model_info.mode` is not `chat`. Defaults to `true` |
+| `provider.<name>.options.modelsDiscovery.modelInfoFormat` | `string` | Model info response format. Currently supports `"axonhub"`, `"litellm"`, `"models.dev"`, and `"vllm"` |
+| `provider.<name>.options.modelsDiscovery.filterNonChat` | `boolean` | When model info exposes a model type or mode, skip non-chat models. Defaults to `true` |
 | `provider.<name>.options.modelsDiscovery.models.includeRegex` | `string[]` | Shortcut regex allow-list for discovered model ids only |
 | `provider.<name>.options.modelsDiscovery.models.excludeRegex` | `string[]` | Shortcut regex deny-list for discovered model ids only |
 | `provider.<name>.options.modelsDiscovery.models.includeBy` | `{ field: string, equals: string \| number \| boolean \| null }[]` or `{ field: string, match: string }[]` | Allow-list for top-level raw provider model fields |
@@ -145,13 +145,52 @@ Community provider examples live in [`docs/config_example/`](config_example/).
 
 The generic OpenAI-compatible `/v1/models` endpoint only guarantees a small model list shape. Extra metadata such as context limits, tool calling, reasoning, image input, or structured output is provider-specific, so metadata enrichment is opt-in.
 
-The plugin currently supports three model info formats:
+The plugin currently supports four model info formats:
 
 | Format | Source | Requires `modelInfoEndpoint` | Notes |
 |--------|--------|------------------------------|-------|
+| `"axonhub"` | Extended fields in AxonHub `/v1/models?include=all` | No | Reuses the model-list request and reads AxonHub model cards |
 | `"litellm"` | Provider-specific model info endpoint | Yes | Uses LiteLLM `/v1/model/info` responses |
-| `"models.dev"` | `https://models.dev/models.json` | No | Uses the public models.dev metadata index |
+| `"models.dev"` | `https://models.dev/api.json` | No | Uses the public models.dev metadata index |
 | `"vllm"` | Fields in the provider's `/v1/models` response | No | Reads vLLM-style `max_model_len` when present |
+
+### AxonHub Model Info
+
+Use `modelInfoFormat: "axonhub"` for an [AxonHub](https://github.com/looplj/axonhub) provider. The plugin adds `include=all` to the configured models endpoint and consumes the extended model-card fields from that same response. It does not call `/v1/model/info` or make another metadata request.
+
+```json
+{
+  "plugin": ["opencode-models-discovery"],
+  "provider": {
+    "axonhub": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "AxonHub",
+      "options": {
+        "baseURL": "http://127.0.0.1:8090/v1",
+        "modelsDiscovery": {
+          "enabled": true,
+          "modelInfoFormat": "axonhub",
+          "smartModelName": true
+        }
+      },
+      "models": {}
+    }
+  }
+}
+```
+
+When an AxonHub model has a configured model card, the plugin may populate:
+
+- `limit.context` from `context_length`
+- `limit.output` from `max_output_tokens`
+- `reasoning`, `tool_call`, and `attachment` from `capabilities`
+- `modalities`
+- `cost` from USD per-million-token `pricing`
+- The display name when `smartModelName` is enabled
+
+`context_length` is treated as the total context window, so it is not copied to `limit.input`. Limits are emitted only when both context and output are valid positive integers and output does not exceed context. The plugin does not derive a model release date from AxonHub's `created` field because that timestamp records the AxonHub database row, not the upstream model release.
+
+Channel-only models without an AxonHub model card still appear in discovery, but AxonHub cannot return extended metadata for them. The plugin leaves their unknown limits and capabilities unset rather than guessing. AxonHub exposes only a reasoning-support boolean, not reasoning-effort tiers; OpenCode may still infer variants from known model ids.
 
 ### LiteLLM Model Info
 
@@ -222,7 +261,7 @@ Use `modelInfoFormat: "models.dev"` to enrich discovered models from the public 
 
 This project is not affiliated with, endorsed by, or sponsored by [models.dev](https://models.dev/).
 
-This does not require `modelInfoEndpoint`, because the source is fixed to `https://models.dev/models.json`:
+This does not require `modelInfoEndpoint`, because the source is fixed to `https://models.dev/api.json`:
 
 ```json
 {

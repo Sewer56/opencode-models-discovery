@@ -6,6 +6,12 @@ export interface OpenAIModel {
   [key: string]: unknown
 }
 
+/** Minimally validated model entry returned by an OpenAI-compatible provider. */
+export interface DiscoveredModel {
+  id: string
+  [key: string]: unknown
+}
+
 export interface OpenAIModelsResponse {
   object: string
   data: OpenAIModel[]

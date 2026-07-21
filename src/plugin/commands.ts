@@ -116,6 +116,7 @@ Supported plugin options under provider.<id>.options.modelsDiscovery:
 - smartModelName: use friendlier display names for discovered models
 - modelInfoFormat="models.dev": enrich from the public models.dev index without modelInfoEndpoint
 - modelInfoEndpoint plus modelInfoFormat="litellm": enrich from a LiteLLM-compatible model info endpoint
+- modelInfoFormat="axonhub": read limits, capabilities, modalities, pricing, and names directly from AxonHub /v1/models?include=all entries without another request
 - modelInfoFormat="vllm": for vLLM-compatible providers whose raw /v1/models entries include a positive numeric max_model_len; without another request, sets limit.context and limit.output for matching discovered models
 - filterNonChat: when LiteLLM model info is available, skip non-chat models by default
 
@@ -136,6 +137,7 @@ Recommended defaults:
 - use smartModelName=true only when the user wants friendlier display names
 - use modelInfoFormat="models.dev" for models.dev metadata enrichment
 - use modelInfoEndpoint and modelInfoFormat="litellm" for LiteLLM-compatible model info endpoints
+- use modelInfoFormat="axonhub" for AxonHub providers; it consumes extended fields from the existing models response and does not use modelInfoEndpoint
 - use modelInfoFormat="vllm" only when the provider's /v1/models response exposes max_model_len; it is not a standard OpenAI-compatible field, does not require modelInfoEndpoint, and does not infer other capabilities
 
 Provider compatibility guidance:

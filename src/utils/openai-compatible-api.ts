@@ -1,13 +1,14 @@
 import http from 'node:http'
 import https from 'node:https'
-import type { OpenAIModel, OpenAIModelsResponse } from '../types'
+import type { DiscoveredModel } from '../types'
 
 const OPENAI_COMPATIBLE_MODELS_ENDPOINT = "/v1/models"
 const REQUEST_TIMEOUT_MS = 3000
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 export interface ModelsDiscoveryResult {
   ok: boolean
-  models: OpenAIModel[]
+  models: DiscoveredModel[]
 }
 
 export interface ModelInfoDiscoveryResult {
@@ -43,8 +44,17 @@ function requestJson<T>(urlStr: string, headers: Record<string, string>): Promis
 
     const req = mod.get(urlObj, { headers, timeout: REQUEST_TIMEOUT_MS }, (res) => {
       let data = ''
+      let bytes = 0
       res.setEncoding('utf8')
-      res.on('data', (chunk: string) => data += chunk)
+      res.on('data', (chunk: string) => {
+        bytes += Buffer.byteLength(chunk)
+        if (bytes > MAX_RESPONSE_BYTES) {
+          res.destroy()
+          finish(undefined)
+          return
+        }
+        data += chunk
+      })
       res.on('end', () => {
         if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
           finish(undefined)
@@ -81,8 +91,11 @@ export async function discoverModelsFromProvider(
     headers["Authorization"] = `Bearer ${apiKey}`
   }
 
-  const data = await requestJson<OpenAIModelsResponse>(url, headers)
-  return data ? { ok: true, models: data.data ?? [] } : { ok: false, models: [] }
+  const data = await requestJson<unknown>(url, headers)
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false, models: [] }
+  const models = (data as { data?: unknown }).data
+  if (!Array.isArray(models)) return { ok: false, models: [] }
+  return { ok: true, models: models.filter(isValidModel) }
 }
 
 export async function discoverModelInfoFromProvider(
@@ -106,8 +119,11 @@ export async function fetchModelsDirect(baseURL: string, endpoint: string = OPEN
   const url = buildAPIURL(baseURL, endpoint)
   const headers = { "Content-Type": "application/json" }
 
-  const data = await requestJson<OpenAIModelsResponse>(url, headers)
-  return data?.data?.map(model => model.id) || []
+  const data = await requestJson<unknown>(url, headers)
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return []
+  const models = (data as { data?: unknown }).data
+  if (!Array.isArray(models)) return []
+  return models.filter(isValidModel).map(model => model.id)
 }
 
 export function isOpenAICompatibleProvider(provider: any): boolean {
@@ -132,9 +148,10 @@ export function canDiscoverModels(provider: any): boolean {
   return isOpenAICompatibleProvider(provider) || hasOpenAICompatibleURL(provider) || hasModelsDiscoveryEndpoint(provider)
 }
 
-export function isValidModel(model: any): model is { id: string; [key: string]: any } {
-  return model &&
+export function isValidModel(model: unknown): model is DiscoveredModel {
+  return model !== null &&
          typeof model === 'object' &&
-         typeof model.id === 'string' &&
-         model.id.length > 0
+         !Array.isArray(model) &&
+         typeof (model as Record<string, unknown>).id === 'string' &&
+         ((model as Record<string, unknown>).id as string).trim().length > 0
 }

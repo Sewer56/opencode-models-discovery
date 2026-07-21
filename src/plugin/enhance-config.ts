@@ -9,7 +9,7 @@ import { getDefaultDiscoveryConfigFromEnv, getProviderModelFieldFilters, getProv
 import { fetchModelsDevData } from '../utils/models-dev-fetcher'
 import type { PluginLogger } from './logger'
 import type { PluginInput } from '@opencode-ai/plugin'
-import type { OpenAIModel } from '../types'
+import type { DiscoveredModel } from '../types'
 import type { PluginConfig } from '../types/plugin-config'
 
 interface DiscoveredProvider {
@@ -35,6 +35,15 @@ interface OpenCodeAuth {
 type HostClient = 'opencode' | 'mimocode'
 
 const RESOLVED_PROVIDERS_TIMEOUT_MS = 250
+
+function withQueryParameter(endpoint: string, key: string, value: string): string {
+  const separator = endpoint.indexOf('?')
+  const path = separator === -1 ? endpoint : endpoint.slice(0, separator)
+  const query = separator === -1 ? '' : endpoint.slice(separator + 1)
+  const params = new URLSearchParams(query)
+  params.set(key, value)
+  return `${path}?${params.toString()}`
+}
 
 async function getResolvedProvidersByID(
   client: PluginInput['client'],
@@ -182,9 +191,12 @@ export async function enhanceConfig(
     for (const [providerName, providerConfig] of Object.entries(providers)) {
       const p = providerConfig as any
       const providerDiscoveryConfig = p.options?.modelsDiscovery ?? {}
-      const modelsEndpoint = providerDiscoveryConfig.endpoint ?? '/v1/models'
       const modelInfoEndpoint = providerDiscoveryConfig.modelInfoEndpoint
       const modelInfoFormat = providerDiscoveryConfig.modelInfoFormat
+      const configuredModelsEndpoint = providerDiscoveryConfig.endpoint ?? '/v1/models'
+      const modelsEndpoint = modelInfoFormat === ModelInfoFormat.AxonHub
+        ? withQueryParameter(configuredModelsEndpoint, 'include', 'all')
+        : configuredModelsEndpoint
       const filterNonChat = providerDiscoveryConfig.filterNonChat !== false
       const forceDiscoveryEnabled = providerDiscoveryConfig.enabled === true
 
@@ -208,7 +220,7 @@ export async function enhanceConfig(
 
       const apiKey = await getProviderApiKey(providerName, p, client, resolvedProvidersLoader, logger)
 
-      let models: OpenAIModel[]
+      let models: DiscoveredModel[]
       const discovery = await discoverModelsFromProvider(baseURL, apiKey, modelsEndpoint)
       if (!discovery.ok) {
         logger.warn('Provider model discovery failed', {
@@ -240,6 +252,10 @@ export async function enhanceConfig(
         })
       } else if (modelInfoFormat === ModelInfoFormat.VLLM) {
         modelInfoEnricher = createModelInfoEnricher(modelInfoFormat, null)
+      } else if (modelInfoFormat === ModelInfoFormat.AxonHub) {
+        // AxonHub includes limits and capabilities in its /v1/models entries.
+        // Reuse that response instead of making a second metadata request.
+        modelInfoEnricher = createModelInfoEnricher(modelInfoFormat, models, { filterNonChat })
       } else if (typeof modelInfoEndpoint === 'string' && modelInfoEndpoint.length > 0 && modelInfoFormat) {
         const modelInfoDiscovery = await discoverModelInfoFromProvider(baseURL, apiKey, modelInfoEndpoint)
         if (modelInfoDiscovery.ok) {
@@ -255,7 +271,7 @@ export async function enhanceConfig(
       }
 
       const existingModels = p.models || {}
-      const discoveredModels: Record<string, any> = {}
+      const discoveredModels: Record<string, any> = Object.create(null)
       let chatModelsCount = 0
 
       const hasProviderModelRegexFilter = !!providerDiscoveryConfig.models?.includeRegex?.length || !!providerDiscoveryConfig.models?.excludeRegex?.length
@@ -265,7 +281,7 @@ export async function enhanceConfig(
 
       for (const model of models) {
         const modelKey = model.id
-        if (!existingModels[modelKey]) {
+        if (!Object.prototype.hasOwnProperty.call(existingModels, modelKey)) {
           if (!shouldDiscoverModelByFields(model, providerModelFieldFilters)) {
             continue
           }

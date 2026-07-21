@@ -155,6 +155,19 @@ For LiteLLM-compatible model info endpoints:
 }
 ```
 
+For AxonHub extended model cards:
+
+```json
+{
+  "modelsDiscovery": {
+    "enabled": true,
+    "modelInfoFormat": "axonhub"
+  }
+}
+```
+
+AxonHub enrichment reuses `/v1/models?include=all`; it does not require `modelInfoEndpoint`. It maps authoritative model-card limits and capabilities when present and leaves channel-only models without cards unset.
+
 If metadata cannot be fetched or matched safely, discovery still succeeds and the plugin leaves unknown capability fields unset rather than guessing defaults. See [`docs/providers.md`](docs/providers.md#modelsdev-metadata-enrichment) for details.
 
 ## Upgrade Note
