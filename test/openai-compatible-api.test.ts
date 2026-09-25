@@ -76,10 +76,10 @@ describe('OpenAI-compatible API discovery', () => {
   })
 
   it.each([
-    { data: {} },
-    { data: null },
-    {},
-    [],
+    [{ data: {} }],
+    [{ data: null }],
+    [{}],
+    [[]],
   ])('returns ok false for malformed model-list payload %j', async (payload) => {
     await withServer((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })
