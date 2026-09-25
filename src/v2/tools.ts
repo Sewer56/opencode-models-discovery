@@ -30,6 +30,8 @@ export async function registerDiscoveryTools(
       name: "models_discovery_refresh",
       description: "Refresh models discovered from configured OpenAI-compatible providers.",
       input: noInput,
+      // Direct tool: keeps the tiny schema out of the Code Mode catalog.
+      options: { codemode: false },
       execute: async () => {
         const result = await refresh()
         return { content: `Discovered ${result.models} models from ${result.providers} providers.` }
@@ -39,6 +41,8 @@ export async function registerDiscoveryTools(
       name: "models_discovery_status",
       description: "Show the current OpenAI-compatible model discovery inventory.",
       input: noInput,
+      // Direct tool: keeps the tiny schema out of the Code Mode catalog.
+      options: { codemode: false },
       execute: async () => {
         const result = status()
         return { content: `Current discovery inventory has ${result.models} models from ${result.providers} providers.` }
