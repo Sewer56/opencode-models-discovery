@@ -69,6 +69,59 @@ describe("V2 provider controller", () => {
     expect(set).toHaveBeenCalledWith("local", [existing, expect.objectContaining({ modelID: "discovered-model" })])
   })
 
+  it("replaces default limits on configured models without losing name or variants", async () => {
+    const set = vi.fn()
+    const explicit = {
+      id: "gpt-6-sol", modelID: "gpt-6-sol", name: "GPT 6 Sol",
+      limit: { context: 200_000, output: 32_000 },
+      variants: [{ id: "max", settings: { reasoningEffort: "max" } }],
+    }
+    const controller = createProviderController(
+      { provider: { reload: vi.fn() } } as never,
+      [provider()],
+      (id) => `integration.${id}`,
+    )
+    const editor = {
+      get: vi.fn().mockReturnValue({ models: new Map([["gpt-6-sol", explicit]]) }),
+      add: vi.fn(),
+      models: { set },
+    }
+    const discovered = inventory("gpt-6-sol")
+    discovered.get("local")!.set("gpt-6-sol", {
+      ...discovered.get("local")!.get("gpt-6-sol")!,
+      limit: { context: 1_050_000, output: 128_000 },
+    })
+
+    await controller.replaceInventory(discovered)
+    controller.transform(editor as never)
+
+    expect(set).toHaveBeenCalledWith("local", [{
+      ...explicit,
+      limit: { context: 1_050_000, output: 128_000 },
+    }])
+    expect(explicit.limit.context).toBe(200_000)
+  })
+
+  it("preserves non-default configured limits", async () => {
+    const set = vi.fn()
+    const explicit = { id: "spike-model", modelID: "spike-model", limit: { context: 64_000, output: 8_000 } }
+    const controller = createProviderController(
+      { provider: { reload: vi.fn() } } as never,
+      [provider()],
+      (id) => `integration.${id}`,
+    )
+    const editor = {
+      get: vi.fn().mockReturnValue({ models: new Map([["spike-model", explicit]]) }),
+      add: vi.fn(),
+      models: { set },
+    }
+
+    await controller.replaceInventory(inventory())
+    controller.transform(editor as never)
+
+    expect(set).toHaveBeenCalledWith("local", [explicit])
+  })
+
   it("preserves explicit provider settings and disabled activation", async () => {
     const controller = createProviderController(
       { provider: { reload: vi.fn() } } as never,

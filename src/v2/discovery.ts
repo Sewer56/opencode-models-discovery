@@ -49,8 +49,11 @@ async function resolveModelInfoEnricher(
     format === ModelInfoFormat.Bifrost ||
     format === ModelInfoFormat.VLLM ||
     format === ModelInfoFormat.LlamaSwap ||
-    format === ModelInfoFormat.OmniRoute
+    format === ModelInfoFormat.OmniRoute ||
+    format === ModelInfoFormat.AxonHub
   ) {
+    // AxonHub embeds limits in each /v1/models entry; the enricher reads
+    // the raw model passed to mapToDiscoveredV2Model, not a second endpoint.
     return createModelInfoEnricher(format, null)
   }
 

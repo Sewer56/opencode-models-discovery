@@ -42,6 +42,21 @@ function copyInventory(inventory: Inventory): Inventory {
   return new Map([...inventory].map(([providerID, models]) => [providerID, new Map(models)]))
 }
 
+function mergeDiscoveredLimit(
+  providerID: Provider.ID,
+  existing: Model.Info,
+  discovered: DiscoveredV2Model,
+): Model.Info {
+  if (!existing.limit) return existing
+  const fallback = Model.Info.default(providerID, existing.id)
+  // Model.Info.default fills missing limits before transforms run. Replace
+  // that sentinel only; keep explicit non-default limits and all user fields.
+  if (existing.limit.context !== fallback.limit.context || existing.limit.output !== fallback.limit.output) {
+    return existing
+  }
+  return { ...existing, limit: { ...existing.limit, ...discovered.limit } }
+}
+
 export function createProviderController(
   ctx: ProviderContext,
   configured: readonly ConfiguredProvider[],
@@ -73,7 +88,10 @@ export function createProviderController(
       const existing = source ? [...source.models.values()] : []
       const existingIDs = new Set(existing.map((model) => String(model.id)))
       editor.models.set(providerID, [
-        ...existing,
+        ...existing.map((model) => {
+          const discovered = models.get(String(model.id))
+          return discovered ? mergeDiscoveredLimit(providerID, model, discovered) : model
+        }),
         ...[...models.values()].filter((model) => !existingIDs.has(model.id)).map((model) => Object.assign(
           Model.Info.default(providerID, Model.ID.make(model.modelID) as Model.ID),
           model,

@@ -12,6 +12,38 @@ const options = new Map([["local", parseProviderDiscoveryOptions({
 })!]])
 
 describe("V2 provider discovery", () => {
+  it("reads AxonHub model-card limits without a second request", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [
+        {
+          id: "gpt-6-sol", context_length: 1_050_000, max_output_tokens: 128_000, type: "chat",
+          pricing: { input: 4, output: 20, cache_read: 0.4, cache_write: 5, unit: "per_1m_tokens", currency: "USD" },
+        },
+        { id: "glm-5.3", context_length: 1_000_000, max_output_tokens: 131_072, type: "chat" },
+        { id: "bad-limit", context_length: -1, max_output_tokens: 128_000, type: "chat" },
+      ] }),
+    })
+    const axonhubOptions = new Map([["local", parseProviderDiscoveryOptions({
+      enabled: true,
+      modelInfoFormat: "axonhub",
+    })!]])
+
+    const result = await discoverInventory([{
+      id: "local",
+      package: "@opencode-ai/ai/providers/openai-compatible",
+      settings: { baseURL: "http://127.0.0.1:1234/v1" },
+    }], axonhubOptions, fetcher)
+
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(result.get("local")?.get("gpt-6-sol")?.limit).toEqual({ context: 1_050_000, output: 128_000 })
+    expect(result.get("local")?.get("gpt-6-sol")?.cost).toEqual([{
+      input: 4, output: 20, cache: { read: 0.4, write: 5 },
+    }])
+    expect(result.get("local")?.get("glm-5.3")?.limit).toEqual({ context: 1_000_000, output: 131_072 })
+    expect(result.get("local")?.get("bad-limit")?.limit.context).toBe(200_000)
+  })
+
   it("discovers, filters, and maps OpenAI-compatible models", async () => {
     const fetcher = vi.fn().mockResolvedValue({
       ok: true,
