@@ -102,6 +102,64 @@ describe("V2 provider controller", () => {
     expect(explicit.limit.context).toBe(200_000)
   })
 
+  it("applies discovered cost to existing models without explicit cost", async () => {
+    const set = vi.fn()
+    const explicit = { id: "spike-model", modelID: "spike-model", limit: { context: 200_000, output: 32_000 }, cost: [] }
+    const controller = createProviderController(
+      { provider: { reload: vi.fn() } } as never,
+      [provider()],
+      (id) => `integration.${id}`,
+    )
+    const editor = {
+      get: vi.fn().mockReturnValue({ models: new Map([["spike-model", explicit]]) }),
+      add: vi.fn(),
+      models: { set },
+    }
+    const discovered = inventory("spike-model")
+    discovered.get("local")!.set("spike-model", {
+      ...discovered.get("local")!.get("spike-model")!,
+      limit: { context: 128_000, output: 8_192 },
+      cost: [{ input: 1.4, output: 4.4, cache: { read: 0.26, write: 0 } }],
+    })
+
+    await controller.replaceInventory(discovered)
+    controller.transform(editor as never)
+
+    expect(set).toHaveBeenCalledWith("local", [{
+      ...explicit,
+      limit: { context: 128_000, output: 8_192 },
+      cost: [{ input: 1.4, output: 4.4, cache: { read: 0.26, write: 0 } }],
+    }])
+    expect(explicit.cost).toEqual([])
+  })
+
+  it("preserves explicitly configured cost", async () => {
+    const set = vi.fn()
+    const userCost = [{ input: 2, output: 8, cache: { read: 0.2, write: 0 } }]
+    const explicit = { id: "spike-model", modelID: "spike-model", limit: { context: 64_000, output: 8_000 }, cost: userCost }
+    const controller = createProviderController(
+      { provider: { reload: vi.fn() } } as never,
+      [provider()],
+      (id) => `integration.${id}`,
+    )
+    const editor = {
+      get: vi.fn().mockReturnValue({ models: new Map([["spike-model", explicit]]) }),
+      add: vi.fn(),
+      models: { set },
+    }
+    const discovered = inventory("spike-model")
+    discovered.get("local")!.set("spike-model", {
+      ...discovered.get("local")!.get("spike-model")!,
+      cost: [{ input: 1.4, output: 4.4, cache: { read: 0.26, write: 0 } }],
+    })
+
+    await controller.replaceInventory(discovered)
+    controller.transform(editor as never)
+
+    expect(set).toHaveBeenCalledWith("local", [explicit])
+    expect(explicit.cost).toBe(userCost)
+  })
+
   it("preserves non-default configured limits", async () => {
     const set = vi.fn()
     const explicit = { id: "spike-model", modelID: "spike-model", limit: { context: 64_000, output: 8_000 } }

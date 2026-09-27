@@ -42,19 +42,31 @@ function copyInventory(inventory: Inventory): Inventory {
   return new Map([...inventory].map(([providerID, models]) => [providerID, new Map(models)]))
 }
 
-function mergeDiscoveredLimit(
+function isCostTiers(value: unknown): value is Model.Info["cost"] {
+  return Array.isArray(value) && value.length > 0
+}
+
+function mergeDiscoveredModel(
   providerID: Provider.ID,
   existing: Model.Info,
   discovered: DiscoveredV2Model,
 ): Model.Info {
-  if (!existing.limit) return existing
-  const fallback = Model.Info.default(providerID, existing.id)
-  // Model.Info.default fills missing limits before transforms run. Replace
-  // that sentinel only; keep explicit non-default limits and all user fields.
-  if (existing.limit.context !== fallback.limit.context || existing.limit.output !== fallback.limit.output) {
-    return existing
+  let next = existing
+  if (next.limit) {
+    const fallback = Model.Info.default(providerID, next.id)
+    // Model.Info.default fills missing limits before transforms run. Replace
+    // that sentinel only; keep explicit non-default limits and all user fields.
+    if (next.limit.context === fallback.limit.context && next.limit.output === fallback.limit.output) {
+      next = { ...next, limit: { ...next.limit, ...discovered.limit } }
+    }
   }
-  return { ...existing, limit: { ...existing.limit, ...discovered.limit } }
+  // Session cost tracking reads catalog cost tiers. Explicitly configured
+  // models default to an empty cost array; fill it from discovery only then,
+  // never overriding a cost the user configured themselves.
+  if (!isCostTiers(next.cost) && isCostTiers(discovered.cost)) {
+    next = { ...next, cost: discovered.cost }
+  }
+  return next
 }
 
 export function createProviderController(
@@ -90,7 +102,7 @@ export function createProviderController(
       editor.models.set(providerID, [
         ...existing.map((model) => {
           const discovered = models.get(String(model.id))
-          return discovered ? mergeDiscoveredLimit(providerID, model, discovered) : model
+          return discovered ? mergeDiscoveredModel(providerID, model, discovered) : model
         }),
         ...[...models.values()].filter((model) => !existingIDs.has(model.id)).map((model) => Object.assign(
           Model.Info.default(providerID, Model.ID.make(model.modelID) as Model.ID),
